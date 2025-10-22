@@ -66,7 +66,7 @@ async function incrementPopularity(movieId) {
 /* -------------------------------------------
    Optimized Autocomplete
    - Uses Redis cache (10s)
-   - Fetches limited metadata
+   - Fetches metadata including description
    - Weighted scoring: prefix + popularity + recency
 -------------------------------------------- */
 async function autocomplete(query, limit = 5) {
@@ -96,7 +96,7 @@ async function autocomplete(query, limit = 5) {
 
   const ids = [...new Set(members.map((m) => m.split("|")[1]))];
 
-  // Step 4: Single pipeline fetch (meta + pop + release)
+  // Step 4: Single pipeline fetch (meta + pop + release + description + duration)
   const pipeline = redis.pipeline();
   ids.forEach((id) =>
     pipeline.hmget(
@@ -105,7 +105,9 @@ async function autocomplete(query, limit = 5) {
       "poster_url",
       "rating",
       "genres",
-      "releaseUnix"
+      "releaseUnix",
+      "description",
+      "duration_minutes"
     )
   );
   ids.forEach((id) => pipeline.zscore(POP_ZSET, id));
@@ -115,7 +117,15 @@ async function autocomplete(query, limit = 5) {
   const results = [];
 
   for (let i = 0; i < ids.length; i++) {
-    const [title, poster_url, rating, genres, releaseUnix] = raw[i][1] || [];
+    const [
+      title,
+      poster_url,
+      rating,
+      genres,
+      releaseUnix,
+      description,
+      duration,
+    ] = raw[i][1] || [];
     const pop = parseFloat(raw[ids.length + i][1] || 0);
     if (!title) continue;
     results.push({
@@ -126,6 +136,8 @@ async function autocomplete(query, limit = 5) {
       genres,
       pop,
       release: parseFloat(releaseUnix || now),
+      description,
+      duration_minutes: parseInt(duration) || 0,
     });
   }
 
